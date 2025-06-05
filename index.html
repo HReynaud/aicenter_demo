@@ -3,17 +3,20 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Image Mosaic</title>
+  <title>My Infinite Mosaic</title>
   <style>
     :root {
-      /* Change this to control how big each square “cell” is */
+      /* Adjust this to make each thumbnail larger/smaller */
       --cell-size: 180px;
       /* Gap between images */
       --gap-size: 4px;
+      /* Primary blue color */
+      --primary-blue: #007bff;
     }
     body {
       margin: 0;
-      background: #111;         /* dark background to make photos pop */
+      background: #111;
+      font-family: sans-serif;
     }
     .gallery {
       display: grid;
@@ -27,10 +30,50 @@
       height: 100%;
       object-fit: cover;
       display: block;
+      cursor: pointer;
+      /* no border by default */
+      border: 2px solid transparent;
+      box-sizing: border-box;
+      transition: border 0.2s ease-in-out;
+    }
+    /* When an image is “selected,” give it a blue border */
+    .gallery img.selected {
+      border: 2px solid var(--primary-blue);
+    }
+
+    /* Download button */
+    #download-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      transition: background-color 0.2s ease;
+    }
+    /* Disabled state: light grey background, grey text, not‐allowed cursor */
+    #download-btn:disabled {
+      background-color: #ccc;
+      color: #666;
+      cursor: not-allowed;
+    }
+    /* Enabled state: primary blue background, white text */
+    #download-btn:not(:disabled) {
+      background-color: var(--primary-blue);
+      color: #fff;
     }
   </style>
+  <!-- Include JSZip from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"
+          integrity="sha512-+rFxcN7qS+/KUTGfHgI6/B2M2ahC6NfBL+g/zA7uEX50NLzCFuWlTGQX50u5TCh3TBILFAMZH0uBsQG7bSBwXA=="
+          crossorigin="anonymous"
+          referrerpolicy="no-referrer"></script>
 </head>
 <body>
+
   <div class="gallery">
     <img src="jpg/sample_000000.jpg" loading="lazy" alt="img001.jpg">
     <img src="jpg/sample_000001.jpg" loading="lazy" alt="img001.jpg">
@@ -1033,5 +1076,96 @@
     <img src="jpg/sample_000998.jpg" loading="lazy" alt="img998.jpg">
     <img src="jpg/sample_000999.jpg" loading="lazy" alt="img999.jpg">
   </div>
+
+  <!-- Floating “Download” button -->
+  <button id="download-btn" disabled>Download</button>
+
+  <script>
+    // Keep track of currently selected <img> elements
+    const selectedSet = new Set();
+    const gallery = document.querySelector('.gallery');
+    const downloadBtn = document.getElementById('download-btn');
+
+    // Add click‐handler to each image once the DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+      gallery.querySelectorAll('img').forEach(img => {
+        img.addEventListener('click', () => {
+          const src = img.getAttribute('src');
+          if (selectedSet.has(src)) {
+            // Deselect
+            selectedSet.delete(src);
+            img.classList.remove('selected');
+          } else {
+            // Select
+            selectedSet.add(src);
+            img.classList.add('selected');
+          }
+          updateButtonState();
+        });
+      });
+      updateButtonState(); // ensure correct initial state
+    });
+
+    // Enable/disable button based on whether any images are selected
+    function updateButtonState() {
+      if (selectedSet.size > 0) {
+        downloadBtn.disabled = false;
+      } else {
+        downloadBtn.disabled = true;
+      }
+    }
+
+    // When Download is clicked, fetch all selected images, zip them, and trigger download
+    downloadBtn.addEventListener('click', async () => {
+      if (selectedSet.size === 0) return;
+
+      // Show a quick “busy” feedback by disabling button until done
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = 'Preparing…';
+
+      const zip = new JSZip();
+      const folder = zip.folder('images');
+
+      // Fetch each selected image as a Blob, then add to zip
+      const fetchPromises = [];
+      selectedSet.forEach(src => {
+        const filename = src.substring(src.lastIndexOf('/') + 1);
+        const p = fetch(src)
+          .then(response => {
+            if (!response.ok) {
+              throw new Error(`Failed to fetch ${src}`);
+            }
+            return response.blob();
+          })
+          .then(blob => {
+            folder.file(filename, blob);
+          })
+          .catch(err => {
+            console.error('Error fetching', src, err);
+          });
+        fetchPromises.push(p);
+      });
+
+      try {
+        await Promise.all(fetchPromises);
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+        // Create a temporary <a> to trigger the download
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(zipBlob);
+        link.download = 'selected_images.zip';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (err) {
+        console.error('Error creating ZIP:', err);
+        alert('An error occurred while generating the ZIP.');
+      }
+
+      // Restore button state
+      downloadBtn.textContent = 'Download';
+      updateButtonState();
+    });
+  </script>
 </body>
 </html>
